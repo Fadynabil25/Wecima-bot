@@ -103,7 +103,9 @@ def send_main_menu(chat_id):
 🎬 فيلم - بحث عن فيلم
 📺 مسلسل - بحث عن مسلسل
 🏷️ تصنيفات - بحث حسب النوع
-📅 بحث بالسنة - تصفية حسب السنة"""
+📅 بحث بالسنة - تصفية حسب السنة
+
+*أو اكتب اسم الفيلم مباشرة*"""
     send_message(chat_id, msg, keyboard)
 
 def send_results(chat_id, results, page=0):
@@ -160,7 +162,12 @@ def send_movie_details(chat_id, movie):
                 [{"text": "🔙 بحث جديد", "callback_data": "back_main"}]
             ]
         }
-        send_message(chat_id, msg, keyboard)
+        # تقسيم الرسالة لو طويلة
+        if len(msg) > 4000:
+            send_message(chat_id, msg[:2000])
+            send_message(chat_id, msg[2000:4000])
+        else:
+            send_message(chat_id, msg, keyboard)
     else:
         send_message(chat_id, "❌ لا توجد روابط")
 
@@ -180,7 +187,7 @@ def send_categories_menu(chat_id):
 def send_years_menu(chat_id):
     keyboard = {"inline_keyboard": []}
     row = []
-    for year in range(2026, 2020, -1):
+    for year in range(2026, 2019, -1):
         row.append({"text": str(year), "callback_data": f"year_{year}"})
         if len(row) == 3:
             keyboard["inline_keyboard"].append(row)
@@ -194,12 +201,12 @@ def send_years_menu(chat_id):
 user_data = {}
 user_states = {}
 last_update_id = 0
-processed_messages = set()  # لمنع التكرار
+processed_messages = set()
 
 def main():
     global last_update_id
     print("🤖 Bot is running...")
-    print("✅ تم إصلاح مشكلة الرد المتكرر")
+    print("✅ تم إصلاح مشكلة البحث")
     
     while True:
         try:
@@ -212,12 +219,10 @@ def main():
                 for update in data['result']:
                     update_id = update['update_id']
                     
-                    # منع معالجة نفس التحديث مرتين
                     if update_id in processed_messages:
                         continue
                     processed_messages.add(update_id)
                     
-                    # تنظيف الـ set كل 100 رسالة
                     if len(processed_messages) > 100:
                         processed_messages.clear()
                     
@@ -226,25 +231,26 @@ def main():
                     # معالجة الرسائل النصية
                     if 'message' in update:
                         chat_id = update['message']['chat']['id']
-                        text = update['message'].get('text', '')
+                        text = update['message'].get('text', '').strip()
                         
-                        # أوامر القائمة
+                        # ========== معالجة الأوامر أولاً ==========
                         if text == '/start':
                             send_main_menu(chat_id)
                         
-                        elif text == '🔍 بحث' or text == '/search':
-                            send_message(chat_id, "🔍 أدخل اسم الفيلم:")
+                        # معالجة أوامر القائمة (الأزرار النصية)
+                        elif text == '🔍 بحث':
+                            send_message(chat_id, "🔍 أدخل اسم الفيلم أو المسلسل:")
                             user_states[chat_id] = 'waiting_search'
                         
-                        elif text == '⭐ بحث متقدم' or text == '/advanced':
+                        elif text == '⭐ بحث متقدم':
                             send_message(chat_id, "⭐ أدخل اسم الفيلم للبحث المتقدم:")
-                            user_states[chat_id] = 'waiting_search'
+                            user_states[chat_id] = 'waiting_advanced'
                         
-                        elif text == '🎬 فيلم' or text == '/movie':
+                        elif text == '🎬 فيلم':
                             send_message(chat_id, "🎬 أدخل اسم الفيلم:")
                             user_states[chat_id] = 'waiting_movie'
                         
-                        elif text == '📺 مسلسل' or text == '/series':
+                        elif text == '📺 مسلسل':
                             send_message(chat_id, "📺 أدخل اسم المسلسل:")
                             user_states[chat_id] = 'waiting_series'
                         
@@ -255,7 +261,16 @@ def main():
                             send_years_menu(chat_id)
                         
                         elif text == '🆘 مساعدة' or text == '/help':
-                            send_message(chat_id, "📖 *الأوامر:*\n/search - بحث\n/movie - فيلم\n/series - مسلسل\n/cancel - إلغاء")
+                            help_msg = """📖 *الأوامر المتاحة:*
+
+🔍 /search - بحث عادي
+⭐ /advanced - بحث متقدم
+🎬 /movie - بحث عن فيلم
+📺 /series - بحث عن مسلسل
+❌ /cancel - إلغاء
+
+*أو اكتب اسم الفيلم مباشرة للبحث*"""
+                            send_message(chat_id, help_msg)
                         
                         elif text == '❌ إلغاء' or text == '/cancel':
                             if chat_id in user_states:
@@ -263,46 +278,63 @@ def main():
                             send_message(chat_id, "❌ تم الإلغاء")
                             send_main_menu(chat_id)
                         
-                        # معالجة البحث
-                        elif chat_id in user_states:
-                            state = user_states[chat_id]
+                        # ========== البحث المباشر ==========
+                        else:
+                            # لو في حالة انتظار
+                            if chat_id in user_states:
+                                state = user_states[chat_id]
+                                
+                                if state == 'waiting_search':
+                                    results = search_wecima(text)
+                                    if results:
+                                        user_data[chat_id] = results
+                                        send_results(chat_id, results)
+                                    else:
+                                        send_message(chat_id, f"❌ لا توجد نتائج لـ: {text}")
+                                    del user_states[chat_id]
+                                
+                                elif state == 'waiting_advanced':
+                                    results = search_wecima(text)
+                                    if results:
+                                        user_data[chat_id] = results
+                                        send_results(chat_id, results)
+                                    else:
+                                        send_message(chat_id, f"❌ لا توجد نتائج لـ: {text}")
+                                    del user_states[chat_id]
+                                
+                                elif state == 'waiting_movie':
+                                    results = search_wecima(text)
+                                    if results:
+                                        send_movie_details(chat_id, results[0])
+                                    else:
+                                        send_message(chat_id, f"❌ لا توجد نتائج لـ: {text}")
+                                    del user_states[chat_id]
+                                
+                                elif state == 'waiting_series':
+                                    results = search_wecima(text)
+                                    if results:
+                                        # تصفية المسلسلات
+                                        series_results = [r for r in results if 'مسلسل' in r['title']]
+                                        if series_results:
+                                            msg = "📺 *نتائج المسلسلات:*\n\n"
+                                            for i, r in enumerate(series_results[:5], 1):
+                                                msg += f"{i}. {r['title'][:50]}\n"
+                                            send_message(chat_id, msg)
+                                        else:
+                                            send_message(chat_id, "❌ لا توجد مسلسلات")
+                                    else:
+                                        send_message(chat_id, f"❌ لا توجد نتائج لـ: {text}")
+                                    del user_states[chat_id]
                             
-                            if state == 'waiting_search':
+                            # بحث مباشر (بدون أمر)
+                            else:
+                                send_message(chat_id, f"🔍 *جاري البحث عن:* {text}...")
                                 results = search_wecima(text)
                                 if results:
                                     user_data[chat_id] = results
                                     send_results(chat_id, results)
                                 else:
-                                    send_message(chat_id, "❌ لا توجد نتائج")
-                                del user_states[chat_id]
-                            
-                            elif state == 'waiting_movie':
-                                results = search_wecima(text)
-                                if results:
-                                    send_movie_details(chat_id, results[0])
-                                else:
-                                    send_message(chat_id, "❌ لا توجد نتائج")
-                                del user_states[chat_id]
-                            
-                            elif state == 'waiting_series':
-                                results = search_wecima(text)
-                                if results:
-                                    msg = "📺 *نتائج المسلسلات:*\n\n"
-                                    for i, r in enumerate(results[:5], 1):
-                                        msg += f"{i}. {r['title'][:50]}\n"
-                                    send_message(chat_id, msg)
-                                else:
-                                    send_message(chat_id, "❌ لا توجد نتائج")
-                                del user_states[chat_id]
-                        
-                        else:
-                            # بحث تلقائي
-                            results = search_wecima(text)
-                            if results:
-                                user_data[chat_id] = results
-                                send_results(chat_id, results)
-                            else:
-                                send_message(chat_id, "❌ لا توجد نتائج\nأرسل /start للقائمة")
+                                    send_message(chat_id, f"❌ لا توجد نتائج لـ: {text}\n\nأرسل /start للقائمة الرئيسية أو جرب اسم مختلف")
                     
                     # معالجة الأزرار
                     elif 'callback_query' in update:
